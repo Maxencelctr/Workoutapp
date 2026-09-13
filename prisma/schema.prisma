@@ -1,0 +1,135 @@
+// RepRank data model.
+// Note: the sqlite connector has no native enum support in Prisma, so
+// categorical fields (muscle group, equipment, difficulty, visibility,
+// friendship status) are stored as validated strings — see src/lib/constants.ts
+// for the canonical value lists and src/lib/validation.ts for the zod schemas
+// that enforce them at the application boundary.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  email        String   @unique
+  passwordHash String
+  bodyWeightKg Float?
+  xp           Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  exercisesCreated Exercise[]       @relation("ExerciseCreator")
+  sessions         WorkoutSession[]
+  sets             WorkoutSet[]
+  exerciseRanks    ExerciseRank[]
+  recipes          Recipe[]
+
+  friendshipsSent     Friendship[] @relation("FriendshipRequester")
+  friendshipsReceived Friendship[] @relation("FriendshipAddressee")
+
+  @@index([username])
+}
+
+model Exercise {
+  id               String   @id @default(cuid())
+  name             String
+  slug             String   @unique
+  primaryMuscle    String
+  secondaryMuscles String // JSON-encoded array of muscle group values
+  equipment        String
+  difficulty       String
+  instructions     String
+  isCustom         Boolean  @default(false)
+  createdById      String?
+  createdBy        User?    @relation("ExerciseCreator", fields: [createdById], references: [id])
+  createdAt        DateTime @default(now())
+
+  sets  WorkoutSet[]
+  ranks ExerciseRank[]
+
+  @@index([primaryMuscle])
+}
+
+model WorkoutSession {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date      DateTime @default(now())
+  notes     String?
+  createdAt DateTime @default(now())
+
+  sets WorkoutSet[]
+
+  @@index([userId, date])
+}
+
+model WorkoutSet {
+  id           String   @id @default(cuid())
+  sessionId    String
+  session      WorkoutSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exerciseId   String
+  exercise     Exercise @relation(fields: [exerciseId], references: [id])
+  weightKg     Float
+  reps         Int
+  estOneRepMax Float
+  lpGained     Int      @default(0)
+  isPr         Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  @@index([userId, exerciseId, createdAt])
+}
+
+model ExerciseRank {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exerciseId       String
+  exercise         Exercise @relation(fields: [exerciseId], references: [id])
+  lp               Int      @default(0)
+  bestEstOneRepMax Float    @default(0)
+  lastSetAt        DateTime?
+  updatedAt        DateTime @updatedAt
+
+  @@unique([userId, exerciseId])
+}
+
+model Recipe {
+  id           String   @id @default(cuid())
+  title        String
+  description  String
+  ingredients  String // JSON array of { name, quantity }
+  instructions String
+  calories     Int
+  proteinG     Int
+  carbsG       Int
+  fatG         Int
+  servings     Int
+  prepMinutes  Int
+  tags         String // JSON array of strings
+  visibility   String @default("PRIVATE")
+  authorId     String
+  author       User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+
+  @@index([visibility])
+}
+
+model Friendship {
+  id          String   @id @default(cuid())
+  requesterId String
+  requester   User     @relation("FriendshipRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addresseeId String
+  addressee   User     @relation("FriendshipAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+  status      String   @default("PENDING")
+  createdAt   DateTime @default(now())
+
+  @@unique([requesterId, addresseeId])
+  @@index([addresseeId, status])
+}
